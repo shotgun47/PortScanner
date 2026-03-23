@@ -29,19 +29,22 @@ def scan_single_host(target: str, profile: str = "common") -> dict[str, object]:
 
     try:
         arguments = f"{config.get('args', '-sV')} -Pn"
+        # 실제 nmap 스캔 실행
         scan_data = nm.scan(resolved_ip, config["ports"], arguments)
         
-        # [계약 준수] 호스트가 죽어있으면 예외를 발생시켜 backend가 실패를 인지하게 함
+        # 호스트가 응답하지 않을 경우 처리
         if resolved_ip not in nm.all_hosts():
-            raise Exception(f"Host {target} ({resolved_ip}) is down.")
+            # 단순히 0점을 주는 게 아니라 'down' 상태임을 명시적으로 예외 처리
+            raise Exception(f"Target {target} ({resolved_ip}) is not responding to Nmap.")
 
         detailed_ports = []
         raw_open_ports = []
         
         for proto in nm[resolved_ip].all_protocols():
-            lport = nm[resolved_ip][proto].keys()
-            for port in sorted(lport):
-                if nm[resolved_ip][proto][port]["state"] == "open":
+            ports = nm[resolved_ip][proto].keys()
+            for port in sorted(ports):
+                state = nm[resolved_ip][proto][port]["state"]
+                if state == "open":
                     p_info = nm[resolved_ip][proto][port]
                     port_int = int(port)
                     raw_open_ports.append(port_int)
@@ -60,13 +63,14 @@ def scan_single_host(target: str, profile: str = "common") -> dict[str, object]:
             "status": "up",
             "ports": detailed_ports,
             "open_ports": raw_open_ports,
-            "raw_log": str(scan_data) # 대시보드 로그용
+            "raw_log": str(scan_data)
         }
     except Exception as e:
+        # 상위 함수로 에러 전파
         raise e
 
 def run_nmap_scan(target: str, profile: str = "common") -> dict[str, object]:
-    """기존 단일 타겟 스캔 (메인 브랜치 계약 준수 버전)"""
+    """기존 단일 타겟 스캔 (메인 브랜치 계약 준수 및 AI 브리핑 연동용)"""
     started_at = datetime.now(timezone.utc).astimezone()
     
     try:
@@ -80,35 +84,52 @@ def run_nmap_scan(target: str, profile: str = "common") -> dict[str, object]:
             },
             "scan": {
                 "started_at": started_at.isoformat(),
-                "status": res["status"],
+                "status": "completed",  # 'up' 대신 'completed'로 반환하여 워크플로우 호환성 향상
                 "ports": res["ports"],
                 "logs": [
-                    {"level": "info", "message": f"Successfully scanned {target}"},
+                    {"level": "info", "message": f"Scan started for {target}"},
+                    {"level": "info", "message": f"Found {len(res['ports'])} open ports."},
                     {"level": "debug", "message": res.get("raw_log", "")}
                 ]
             }
         }
     except Exception as e:
-        # 실패 시 백엔드가 인지할 수 있도록 raise
-        raise ValueError(f"Scan failed for {target}: {str(e)}")
+        # AI 브리핑 실패(404)를 방지하기 위해 실패 시에도 규격화된 에러 반환
+        return {
+            "scan_id": f"error-{uuid4().hex[:4]}",
+            "target": {"input_value": target, "resolved_ip": target},
+            "scan": {
+                "started_at": started_at.isoformat(),
+                "status": "failed",
+                "ports": [],
+                "logs": [{"level": "error", "message": str(e)}]
+            }
+        }
 
 def run_inventory_scan(scope: str, profile: str = "common", max_workers: int = 20) -> dict[str, object]:
-    """대역 병렬 스캔 (팀원 요청 사양)"""
+    """대역 병렬 스캔 (팀원 요청 사양 - 변수명 수정 완료)"""
     nm = nmap.PortScanner()
     nm.scan(hosts=scope, arguments="-sn")
     live_hosts = nm.all_hosts()
     
     results = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_ip = {executor.submit(scan_single_host, ip, profile): ip for ip in live_hosts}
+        # submit 시 'ip' 대신 'host'를 사용하여 루프 변수 충돌 방지
+        future_to_ip = {executor.submit(scan_single_host, host, profile): host for host in live_hosts}
         for future in as_completed(future_to_ip):
+            target_ip = future_to_ip[future]
             try:
                 data = future.result()
                 results.append({
                     "ip": data["ip"],
-                    "status": data["status"],
+                    "status": "completed",
                     "open_ports": data.get("open_ports", [])
                 })
             except Exception:
-                pass
+                results.append({
+                    "ip": target_ip,
+                    "status": "failed",
+                    "open_ports": []
+                })
+                
     return {"hosts": sorted(results, key=lambda x: x["ip"])}
