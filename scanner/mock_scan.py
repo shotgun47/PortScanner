@@ -40,6 +40,22 @@ def run_mock_scan(target: str, profile: Profile = "mixed") -> dict[str, object]:
         },
     }
 
+def run_mock_inventory_scan(scope: str, profile: Profile = "mixed") -> dict[str, object]:
+    """대역 스캔의 결과 구조를 흉내 내는 모크 함수"""
+    # 간단하게 TARGET_IPS에 정의된 호스트들이 살아있다고 가정하고 반환
+    hosts = []
+    for name, ip in TARGET_IPS.items():
+        if not name.endswith(".local"): # 중복 제거용
+            continue
+        hosts.append({
+            "ip": ip,
+            "status": "up",
+            "open_ports": [p["port"] for p in _profile_ports(profile)]
+        })
+    
+    return {
+        "hosts": hosts
+    }
 
 def _profile_ports(profile: Profile) -> list[dict[str, object]]:
     base_ssh = {

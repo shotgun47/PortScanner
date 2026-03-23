@@ -401,7 +401,7 @@ st.title("Tribest ASM Dashboard")
 
 with st.expander("🌐 대역 기반 자산 스캔 (Inventory Drift)", expanded=False):
     inv_col1, inv_col2 = st.columns([3, 1])
-    scope_input = inv_col1.text_input("IP 대역 (Scope)", value="172.28.0.0/29")
+    scope_input = inv_col1.text_input("IP 대역 (Scope)", value="172.28.0.0/24")
     inv_profile = inv_col2.selectbox("대역 스캔용 프로필", list(SCAN_PROFILES.keys()), key="inv_profile_select")
     
     if st.button("대역 탐색 및 대기 목록에 추가", type="primary", use_container_width=True):

@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 import re
 import socket
+import nmap
 from datetime import datetime, timezone
 from uuid import uuid4
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import nmap
 
 TARGET_IPS = {
     "juice-shop": "172.28.0.11",
@@ -25,6 +26,7 @@ TARGET_IPS = {
     "vsftpd-2-3-4.lab.local": "172.28.0.80",
 }
 
+# 스캔 프로필 설정
 PROFILE_CONFIG = {
     "quick": {
         "ports": "21,22,80,139,443,445,3000,8080,3306,6379,9200",
@@ -52,6 +54,105 @@ PROFILE_CONFIG = {
 def is_ip(address: str) -> bool:
     ip_pattern = re.compile(r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$")
     return bool(ip_pattern.match(address))
+
+
+def scan_single_host(ip: str, profile: str = "common") -> dict[str, object]:
+    """단일 호스트 상세 스캔 (서비스 정보 포함)"""
+    config = PROFILE_CONFIG.get(profile, PROFILE_CONFIG["common"])
+    nm = nmap.PortScanner()
+    
+    # -Pn: Ping 생략 (방화벽 우회 및 속도), -sV: 서비스 버전 탐지
+    arguments = f"{config.get('args', '-sV')} -Pn"
+    try:
+        nm.scan(ip, config["ports"], arguments)
+    except Exception as exc:
+        raise RuntimeError(f"host scan failed for {ip}: {exc}") from exc
+        
+    if ip not in nm.all_hosts():
+        return {"ip": ip, "status": "down", "ports": [], "open_ports": []}
+
+    try:
+        host_state = nm[ip].state()
+    except Exception:
+        host_state = "unknown"
+
+    if host_state != "up":
+        return {"ip": ip, "status": host_state, "ports": [], "open_ports": []}
+
+    detailed_ports = []
+    raw_open_ports = []
+    
+    for proto in nm[ip].all_protocols():
+        lport = nm[ip][proto].keys()
+        for port in sorted(lport):
+            p_info = nm[ip][proto][port]
+            if p_info["state"] == "open":
+                port_int = int(port)
+                raw_open_ports.append(port_int)
+                detailed_ports.append({
+                    "port": port_int,
+                    "protocol": proto,
+                    "service": {
+                        "name": p_info.get("name", "unknown"),
+                        "product": p_info.get("product", ""),
+                        "version": p_info.get("version", ""),
+                        "cpe": p_info.get("cpe") or None,
+                    }
+                })
+    
+    return {
+        "ip": ip,
+        "status": "up",
+        "ports": detailed_ports,
+        "open_ports": sorted(raw_open_ports)
+    }
+
+def run_inventory_scan(scope: str, profile: str = "common", max_workers: int = 20) -> dict[str, object]:
+    """
+    [요구사항 구현] 대역 병렬 스캔
+    반환 형식: {"hosts": [{"ip":..., "status":..., "open_ports": [...]}]}
+    """
+    nm = nmap.PortScanner()
+    # 1단계: Host Discovery (Ping 스캔으로 살아있는 IP만 추출)
+    nm.scan(hosts=scope, arguments="-sn")
+    live_hosts = [
+        host
+        for host in nm.all_hosts()
+        if nm[host].state() == "up"
+    ]
+
+    if not live_hosts:
+        return {"hosts": []}
+    
+    results = []
+    # 2단계: ThreadPoolExecutor로 병렬 상세 스캔 실행
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_ip = {
+            executor.submit(scan_single_host, ip, profile): ip 
+            for ip in live_hosts
+            }
+        
+        for future in as_completed(future_to_ip):
+            ip = future_to_ip[future]
+            try:
+                data = future.result()
+                results.append(
+                    {
+                        "ip": data["ip"],
+                        "status": data["status"],
+                        "open_ports": data["open_ports"],
+                    }
+                )
+            except Exception:
+                results.append(
+                    {
+                        "ip": ip,
+                        "status": "error",
+                        "open_ports": [],
+                    }
+                )
+
+    return {"hosts": sorted(results, key=lambda x: x["ip"])}
 
 
 def run_nmap_scan(target_input: str, profile: str = "common") -> dict[str, object]:
