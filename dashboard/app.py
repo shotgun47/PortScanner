@@ -22,6 +22,7 @@ st.markdown(
 
 if "last_scan_data" not in st.session_state: st.session_state["last_scan_data"] = None
 if "scan_queue" not in st.session_state: st.session_state["scan_queue"] = []
+if "scan_queue_meta" not in st.session_state: st.session_state["scan_queue_meta"] = {}
 if "batch_results" not in st.session_state: st.session_state["batch_results"] = []
 if "selected_scan_id" not in st.session_state: st.session_state["selected_scan_id"] = None
 if "selected_scan_profile" not in st.session_state: st.session_state["selected_scan_profile"] = "common"
@@ -415,9 +416,17 @@ with st.expander("🌐 대역 기반 자산 스캔 (Inventory Drift)", expanded=
                     if discovered_hosts:
                         added_count = 0
                         for h in discovered_hosts:
-                            if h not in st.session_state["scan_queue"]:
-                                st.session_state["scan_queue"].append(h)
+                            ip = h["ip"]
+                            # 실행용 queue는 IP만
+                            if ip not in st.session_state["scan_queue"]:
+                                st.session_state["scan_queue"].append(ip)
                                 added_count += 1
+
+                            # 표시용 정보는 별도 저장
+                            st.session_state["scan_queue_meta"][ip] = {
+                                "status": h.get("status", "unknown"),
+                                "open_ports": h.get("open_ports", []),
+                            }
                         st.success(f"✅ {added_count}개의 활성 호스트를 🚀 스캔 대기 목록에 추가했습니다! (아래에서 스캔을 시작해 주세요)")
                     else:
                         st.warning("이 대역에서 발견된 활성 호스트가 없습니다.")
@@ -464,6 +473,7 @@ with st.expander("🚀 타깃 스캔 실행 (단일/병렬)", expanded=True):
     
     if input_col3.button("목록 비우기", key="clear-scan-queue", use_container_width=True):
         st.session_state["scan_queue"] = []
+        st.session_state["scan_queue_meta"] = {}
         st.rerun()
 
     action_trigger = None
@@ -486,10 +496,17 @@ with st.expander("🚀 타깃 스캔 실행 (단일/병렬)", expanded=True):
 
     if targets_to_run:
         st.caption("최종 대기 목록")
-        remove_target = None
+        remove_target = None 
         for idx, target in enumerate(targets_to_run):
+            meta = st.session_state["scan_queue_meta"].get(
+                target,
+                {"status": "unknown", "open_ports": []}
+            )
             row_col, remove_col = st.columns([5, 1])
-            row_col.write(f"{idx + 1}. `{target}`")
+            status = meta.get("status", "unknown")
+            open_ports = meta.get("open_ports", [])
+
+            row_col.write(f"{idx + 1}. `{target}` | status: `{status}` | open_ports: `{open_ports}`")
             if remove_col.button("삭제", key=f"remove-{idx}", use_container_width=True): remove_target = target
         if remove_target is not None:
             st.session_state["scan_queue"] = [item for item in st.session_state["scan_queue"] if item != remove_target]
