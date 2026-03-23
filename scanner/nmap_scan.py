@@ -16,12 +16,12 @@ PROFILE_CONFIG = {
 
 def scan_single_host(target: str, profile: str = "common") -> dict[str, object]:
     """
-    단일 타겟 스캔
-    - target: 도메인(juice-shop.lab.local) 또는 IP
+    단일 타겟 상세 스캔 (서비스 정보 및 IP 해석 포함)
     """
     config = PROFILE_CONFIG.get(profile, PROFILE_CONFIG["common"])
     nm = nmap.PortScanner()
     
+    # [계약 준수] 타겟 이름(DNS)을 IP로 해석
     try:
         resolved_ip = socket.gethostbyname(target)
     except socket.gaierror:
@@ -31,9 +31,9 @@ def scan_single_host(target: str, profile: str = "common") -> dict[str, object]:
         arguments = f"{config.get('args', '-sV')} -Pn"
         scan_data = nm.scan(resolved_ip, config["ports"], arguments)
         
- 
+        # [계약 준수] 호스트가 죽어있으면 예외를 발생시켜 backend가 실패를 인지하게 함
         if resolved_ip not in nm.all_hosts():
-            raise Exception(f"Host {target} ({resolved_ip}) appears to be down or unreachable.")
+            raise Exception(f"Host {target} ({resolved_ip}) is down.")
 
         detailed_ports = []
         raw_open_ports = []
@@ -60,13 +60,13 @@ def scan_single_host(target: str, profile: str = "common") -> dict[str, object]:
             "status": "up",
             "ports": detailed_ports,
             "open_ports": raw_open_ports,
-            "raw_log": str(scan_data)
+            "raw_log": str(scan_data) # 대시보드 로그용
         }
     except Exception as e:
         raise e
 
 def run_nmap_scan(target: str, profile: str = "common") -> dict[str, object]:
-    """기존 계약(Main)을 준수하는 단일 스캔 실행 함수"""
+    """기존 단일 타겟 스캔 (메인 브랜치 계약 준수 버전)"""
     started_at = datetime.now(timezone.utc).astimezone()
     
     try:
@@ -89,10 +89,11 @@ def run_nmap_scan(target: str, profile: str = "common") -> dict[str, object]:
             }
         }
     except Exception as e:
+        # 실패 시 백엔드가 인지할 수 있도록 raise
         raise ValueError(f"Scan failed for {target}: {str(e)}")
-    
+
 def run_inventory_scan(scope: str, profile: str = "common", max_workers: int = 20) -> dict[str, object]:
-    """대역 병렬 스캔"""
+    """대역 병렬 스캔 (팀원 요청 사양)"""
     nm = nmap.PortScanner()
     nm.scan(hosts=scope, arguments="-sn")
     live_hosts = nm.all_hosts()
@@ -111,19 +112,3 @@ def run_inventory_scan(scope: str, profile: str = "common", max_workers: int = 2
             except Exception:
                 pass
     return {"hosts": sorted(results, key=lambda x: x["ip"])}
-
-def run_nmap_scan(target: str, profile: str = "common") -> dict[str, object]:
-    """단일 타겟 스캔"""
-    started_at = datetime.now(timezone.utc).astimezone()
-    res = scan_single_host(target, profile)
-    
-    return {
-        "scan_id": f"scan-{uuid4().hex[:8]}",
-        "target": {"input_value": target, "resolved_ip": res["ip"]},
-        "scan": {
-            "started_at": started_at.isoformat(),
-            "status": res["status"],
-            "ports": res["ports"],
-            "logs": [{"level": "info", "message": f"Scan completed for {target}"}]
-        }
-    }
