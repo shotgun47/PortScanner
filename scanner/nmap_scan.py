@@ -90,3 +90,40 @@ def run_nmap_scan(target: str, profile: str = "common") -> dict[str, object]:
         }
     except Exception as e:
         raise ValueError(f"Scan failed for {target}: {str(e)}")
+    
+def run_inventory_scan(scope: str, profile: str = "common", max_workers: int = 20) -> dict[str, object]:
+    """대역 병렬 스캔"""
+    nm = nmap.PortScanner()
+    nm.scan(hosts=scope, arguments="-sn")
+    live_hosts = nm.all_hosts()
+    
+    results = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_ip = {executor.submit(scan_single_host, ip, profile): ip for ip in live_hosts}
+        for future in as_completed(future_to_ip):
+            try:
+                data = future.result()
+                results.append({
+                    "ip": data["ip"],
+                    "status": data["status"],
+                    "open_ports": data.get("open_ports", [])
+                })
+            except Exception:
+                pass
+    return {"hosts": sorted(results, key=lambda x: x["ip"])}
+
+def run_nmap_scan(target: str, profile: str = "common") -> dict[str, object]:
+    """단일 타겟 스캔"""
+    started_at = datetime.now(timezone.utc).astimezone()
+    res = scan_single_host(target, profile)
+    
+    return {
+        "scan_id": f"scan-{uuid4().hex[:8]}",
+        "target": {"input_value": target, "resolved_ip": res["ip"]},
+        "scan": {
+            "started_at": started_at.isoformat(),
+            "status": res["status"],
+            "ports": res["ports"],
+            "logs": [{"level": "info", "message": f"Scan completed for {target}"}]
+        }
+    }
