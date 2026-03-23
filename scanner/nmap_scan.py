@@ -126,3 +126,5 @@ def run_inventory_scan(scope: str, profile: str = "common", max_workers: int = 2
                 data = future.result()
                 results.append({"ip": data["ip"], "status": "completed", "open_ports": data.get("open_ports", [])})
             except Exception:
+                results.append({"ip": target_ip, "status": "failed", "open_ports": []})
+    return {"hosts": sorted(results, key=lambda x: x["ip"])}
