@@ -1,0 +1,49 @@
+id: vsftpd-backdoor-risk-check
+
+info:
+  name: vsftpd 2.3.4 Backdoor Risk Check
+  author: local
+  severity: high
+  description: |
+    Sends the well-known smiley username trigger associated with the vsftpd 2.3.4
+    backdoor and then checks whether port 6200 responds, which is a stronger sign
+    of backdoor presence than banner-only matching.
+  tags: ftp,vsftpd,backdoor,risk,verification
+
+tcp:
+  - host:
+      - "{{Hostname}}"
+    port: 21
+    inputs:
+      - data: "USER test:)\r\n"
+      - data: "PASS test\r\n"
+    read-size: 512
+    matchers:
+      - type: word
+        part: data
+        words:
+          - "331"
+          - "530"
+        condition: or
+
+  - host:
+      - "{{Hostname}}"
+    port: 6200
+    inputs:
+      - data: "id\n"
+    read-size: 512
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: data
+        words:
+          - "uid="
+          - "gid="
+        condition: and
+
+      - type: word
+        part: data
+        words:
+          - "sh"
+          - "uid="
+        condition: or

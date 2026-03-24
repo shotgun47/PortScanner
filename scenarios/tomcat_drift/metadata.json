@@ -1,0 +1,7 @@
+{
+    "name":  "tomcat_drift",
+    "target_hint":  "tomcat-cve-2017-12615.lab.local",
+    "container_name":  "vuln-tomcat-cve-2017-12615",
+    "script_path":  "scenarios/tomcat_drift/scenario.sh",
+    "description":  "Randomly toggles simulated TCP ports (3000/8080/3306) every 60-180 seconds to induce scan drift."
+}

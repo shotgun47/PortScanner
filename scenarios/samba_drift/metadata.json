@@ -1,0 +1,7 @@
+{
+    "name":  "samba_drift",
+    "target_hint":  "sambacry.lab.local",
+    "container_name":  "vuln-sambacry",
+    "script_path":  "scenarios/samba_drift/scenario.sh",
+    "description":  "Randomly toggles simulated TCP ports (3000/445/8080) every 60-180 seconds to induce scan drift."
+}

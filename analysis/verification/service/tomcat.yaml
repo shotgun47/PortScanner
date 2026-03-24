@@ -1,0 +1,32 @@
+id: tomcat-service-check
+
+info:
+  name: Apache Tomcat Service Check
+  author: local
+  severity: info
+  description: |
+    Confirms that the target behaves like Apache Tomcat by matching
+    the standard Tomcat error page and server signature.
+  tags: tomcat,service,verification
+
+http:
+  - raw:
+      - |
+        OPTIONS / HTTP/1.1
+        Host: {{Hostname}}
+        Connection: close
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "HTTP Status 405"
+          - "JSPs only permit GET POST or HEAD"
+          - "Apache Tomcat/8.5.19"
+        condition: and
+
+      - type: regex
+        part: body
+        regex:
+          - "(?i)Apache Tomcat/8\\.5\\.19"

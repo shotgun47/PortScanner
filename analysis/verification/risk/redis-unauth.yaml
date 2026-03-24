@@ -1,0 +1,25 @@
+id: redis-unauth-info-check
+
+info:
+  name: Redis Unauthenticated INFO Check
+  author: local
+  severity: high
+  description: |
+    Sends INFO to the Redis service and matches common Redis server info fields.
+    A match suggests that server information is accessible without authentication.
+  tags: redis,unauth,risk,verification
+
+tcp:
+  - host:
+      - "{{Hostname}}"
+    port: 6379
+    inputs:
+      - data: "*1\r\n$4\r\nINFO\r\n"
+    read-size: 4096
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: data
+        words:
+          - "redis_version:"
+          - "connected_clients:"

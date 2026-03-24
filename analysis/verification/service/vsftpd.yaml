@@ -1,0 +1,27 @@
+id: vsftpd-service-check
+
+info:
+  name: vsftpd FTP Service Check
+  author: local
+  severity: info
+  description: |
+    Confirms that the target behaves like an FTP service and advertises
+    a vsftpd banner.
+  tags: ftp,vsftpd,service,verification
+
+tcp:
+  - host:
+      - "{{Hostname}}"
+    port: 21
+    read-size: 256
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: data
+        words:
+          - "220"
+
+      - type: word
+        part: data
+        words:
+          - "vsFTPd"

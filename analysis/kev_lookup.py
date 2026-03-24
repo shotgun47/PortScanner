@@ -1,4 +1,4 @@
-"""Known Exploited Vulnerabilities lookup with safe fallback behavior."""
+"""Known Exploited Vulnerabilities live lookup."""
 
 from __future__ import annotations
 
@@ -18,17 +18,6 @@ class KevLookupConfig:
     base_url: str = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 
 
-_OFFLINE_KEV = {
-    "CVE-2021-23017",
-    "CVE-2021-41773",
-    "CVE-2017-12615",
-    "CVE-2017-7494",
-    "CVE-2012-2122",
-    "CVE-2015-1427",
-    "CVE-2011-2523",
-}
-
-
 def lookup_kev(
     cve_id: Optional[str],
     config: Optional[KevLookupConfig] = None,
@@ -37,12 +26,13 @@ def lookup_kev(
     if not cve_id:
         return False
     resolved = config or KevLookupConfig()
+    if not resolved.use_live_api:
+        return False
     try:
-        if resolved.use_live_api:
-            return _lookup_kev_live(cve_id, resolved, session)
+        return _lookup_kev_live(cve_id, resolved, session)
     except Exception as exc:
-        LOGGER.warning("Falling back to offline KEV data for %s: %s", cve_id, exc)
-    return cve_id in _OFFLINE_KEV
+        LOGGER.warning("Live KEV lookup failed for %s: %s", cve_id, exc)
+        return False
 
 
 def _lookup_kev_live(

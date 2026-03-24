@@ -1,0 +1,7 @@
+{
+    "name":  "elasticsearch_drift",
+    "target_hint":  "elasticsearch-cve-2015-1427.lab.local",
+    "container_name":  "vuln-elasticsearch-cve-2015-1427",
+    "script_path":  "scenarios/elasticsearch_drift/scenario.sh",
+    "description":  "Randomly toggles simulated TCP ports (9200/3000/8080) every 60-180 seconds to induce scan drift."
+}

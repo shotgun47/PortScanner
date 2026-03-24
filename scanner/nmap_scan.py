@@ -48,16 +48,19 @@ PROFILE_CONFIG = {
         "ports": "80,443,3000,8080,8443",
         "args": "-sV",
     },
-    "redis": {
-        "ports": "6379",
-        "args": "-sV",
-    }
 }
 
 # 2. 유틸리티 함수
 def is_ip(address: str) -> bool:
     ip_pattern = re.compile(r"^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$")
     return bool(ip_pattern.match(address))
+
+# IP 주소 기준으로 정렬
+def ip_sort_key(host_dict):
+    try:
+        return ipaddress.ip_address(host_dict["ip"])
+    except ValueError:
+        return host_dict["ip"]
 
 # 3. 핵심 스캔 함수들
 def scan_single_host(ip: str, profile: str = "common") -> dict[str, object]:
@@ -150,13 +153,6 @@ def run_inventory_scan(scope: str, profile: str = "common", max_workers: int = 2
                     "status": "error",
                     "open_ports": [],
                 })
-
-    # IP 주소 기준으로 정렬
-    def ip_sort_key(host_dict):
-        try:
-            return ipaddress.ip_address(host_dict["ip"])
-        except ValueError:
-            return host_dict["ip"]
 
     return {"hosts": sorted(results, key=ip_sort_key)}
 

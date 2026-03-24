@@ -1,0 +1,23 @@
+id: redis-service-check
+
+info:
+  name: Redis Service Check
+  author: local
+  severity: info
+  description: |
+    Confirms that the target behaves like a Redis server by sending PING
+    and matching a PONG response.
+  tags: redis,service,verification
+
+tcp:
+  - host:
+      - "{{Hostname}}"
+    port: 6379
+    inputs:
+      - data: "*1\r\n$4\r\nPING\r\n"
+    read-size: 16
+    matchers:
+      - type: word
+        part: data
+        words:
+          - "+PONG"

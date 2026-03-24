@@ -1,0 +1,7 @@
+{
+    "name":  "vsftpd_drift",
+    "target_hint":  "vsftpd-2-3-4.lab.local",
+    "container_name":  "vuln-vsftpd-2-3-4",
+    "script_path":  "scenarios/vsftpd_drift/scenario.sh",
+    "description":  "Randomly toggles simulated TCP ports (21/3000/8080) every 60-180 seconds to induce scan drift."
+}

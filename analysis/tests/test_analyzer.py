@@ -23,7 +23,12 @@ SAMPLE_SCAN = {
             {
                 "port": 6379,
                 "protocol": "tcp",
-                "service": {"name": "redis", "product": "Redis", "version": "4.0.14"},
+                "service": {
+                    "name": "redis",
+                    "product": "Redis",
+                    "version": "4.0.14",
+                    "cpe": "cpe:/a:redislabs:redis:4.0.14",
+                },
             },
         ],
     },
@@ -146,35 +151,70 @@ def test_analyze_computes_drift_when_previous_scan_is_given() -> None:
     assert result["drift"]["closed_ports"] == [80]
 
 
-def test_live_cve_lookup_falls_back_to_offline_catalog() -> None:
+def test_live_cve_lookup_prefers_cpe_and_returns_empty_on_failure() -> None:
+    class DummyResponse:
+        def __init__(self, payload: dict) -> None:
+            self._payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return self._payload
+
+    class RecordingSession(requests.Session):
+        def __init__(self) -> None:
+            super().__init__()
+            self.last_params: dict | None = None
+
+        def get(self, *args, **kwargs):  # type: ignore[override]
+            self.last_params = kwargs.get("params")
+            return DummyResponse(
+                {
+                    "vulnerabilities": [
+                        {
+                            "cve": {
+                                "id": "CVE-2021-23017",
+                                "descriptions": [
+                                    {
+                                        "lang": "en",
+                                        "value": "NGINX resolver off-by-one vulnerability allows out-of-bounds write.",
+                                    }
+                                ],
+                                "metrics": {
+                                    "cvssMetricV31": [
+                                        {"cvssData": {"baseSeverity": "HIGH"}}
+                                    ]
+                                },
+                            }
+                        }
+                    ]
+                }
+            )
+
+    session = RecordingSession()
+    findings = lookup_cves(
+        service={
+            "name": "http",
+            "product": "nginx",
+            "version": "1.18.0",
+            "cpe": "cpe:/a:nginx:nginx:1.18.0",
+        },
+        config=NvdLookupConfig(use_live_api=True),
+        session=session,
+    )
+    assert session.last_params is not None
+    assert "cpeName" in session.last_params
+    assert session.last_params["cpeName"] == "cpe:2.3:a:nginx:nginx:1.18.0:*:*:*:*:*:*:*"
+    assert any(item.cve_id == "CVE-2021-23017" for item in findings)
+
     class BrokenSession(requests.Session):
         def get(self, *args, **kwargs):  # type: ignore[override]
             raise requests.RequestException("network blocked")
 
-    findings = lookup_cves(
+    empty_findings = lookup_cves(
         service={"name": "http", "product": "nginx", "version": "1.18.0"},
         config=NvdLookupConfig(use_live_api=True),
         session=BrokenSession(),
     )
-    assert any(item.cve_id == "CVE-2021-23017" for item in findings)
-
-    result = analyze(
-        {
-            "scan_id": "scan-002",
-            "target": {"input_value": "web.lab.local", "resolved_ip": "192.168.56.30"},
-            "scan": {
-                "started_at": "2026-03-10T22:00:00+09:00",
-                "ports": [
-                    {
-                        "port": 80,
-                        "protocol": "tcp",
-                        "service": {"name": "http", "product": "nginx", "version": "1.18.0"},
-                    }
-                ],
-            },
-        },
-        config=AnalyzerConfig(use_live_nvd=True, use_live_kev=True, use_live_epss=True),
-    ).to_dict()
-
-    assert result["analysis"]["risk_summary"]["score"] >= 35
-    assert any(item.get("cve_id") == "CVE-2021-23017" for item in result["analysis"]["vulnerabilities"])
+    assert empty_findings == []

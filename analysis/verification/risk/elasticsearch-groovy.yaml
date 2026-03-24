@@ -1,0 +1,50 @@
+id: elasticsearch-groovy-risk-check
+
+info:
+  name: Elasticsearch Groovy Script Risk Check
+  author: local
+  severity: high
+  description: |
+    Sends a Groovy script-related request and checks whether the target
+    processes script fields or exposes Groovy/script-related error traces.
+  tags: elasticsearch,groovy,risk,verification
+
+http:
+  - method: POST
+    path:
+      - "{{BaseURL}}/_search?pretty"
+
+    headers:
+      Content-Type: application/json
+
+    body: |
+      {
+        "size": 1,
+        "script_fields": {
+          "tribest_test": {
+            "script": "doc['foo'].value"
+          }
+        }
+      }
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "\"tribest_test\""
+
+      - type: word
+        part: body
+        words:
+          - "groovy"
+          - "script"
+        condition: and
+
+      - type: word
+        part: body
+        words:
+          - "SearchParseException"
+          - "QueryParsingException"
+          - "ScriptException"
+        condition: or

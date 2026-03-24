@@ -1,0 +1,33 @@
+id: redis-replication-risk-check
+
+info:
+  name: Redis Replication Abuse Risk Check
+  author: local
+  severity: high
+  description: |
+    Sends a Redis CONFIG GET command and checks whether sensitive replication-
+    related configuration is accessible without authentication.
+    This is a lightweight risk verification step, not a full RCE exploit.
+  tags: redis,rce,replication,risk,verification
+
+tcp:
+  - host:
+      - "{{Hostname}}"
+    port: 6379
+    inputs:
+      - data: "*2\r\n$6\r\nCONFIG\r\n$3\r\nGET\r\n"
+    read-size: 4096
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: data
+        words:
+          - "dbfilename"
+          - "dir"
+
+      - type: word
+        part: data
+        words:
+          - "-ERR wrong number of arguments"
+          - "CONFIG"
+        condition: and

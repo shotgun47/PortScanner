@@ -1,4 +1,4 @@
-"""NVD-backed CVE lookup with an offline fallback catalog."""
+"""NVD-backed live CVE lookup with CPE-first matching."""
 
 from __future__ import annotations
 
@@ -22,66 +22,6 @@ class NvdLookupConfig:
     api_key: str | None = None
 
 
-_OFFLINE_CATALOG: list[dict[str, Any]] = [
-    {
-        "product": "nginx",
-        "version_prefix": "1.18",
-        "title": "NGINX resolver off-by-one vulnerability",
-        "cve_id": "CVE-2021-23017",
-        "severity": "high",
-        "match_confidence": 0.93,
-    },
-    {
-        "product": "apache http server",
-        "version_prefix": "2.4.49",
-        "title": "Apache path traversal vulnerability",
-        "cve_id": "CVE-2021-41773",
-        "severity": "critical",
-        "match_confidence": 0.96,
-    },
-    {
-        "product": "apache tomcat",
-        "version_prefix": "8.5.19",
-        "title": "Apache Tomcat PUT JSP Upload vulnerability",
-        "cve_id": "CVE-2017-12615",
-        "severity": "critical",
-        "match_confidence": 0.96,
-    },
-    {
-        "product": "samba smbd",
-        "version_prefix": "3.x - 4.x",
-        "title": "Samba remote code execution vulnerability",
-        "cve_id": "CVE-2017-7494",
-        "severity": "critical",
-        "match_confidence": 0.95,
-    },
-    {
-        "product": "mysql",
-        "version_prefix": "5.5.23",
-        "title": "MySQL authentication bypass vulnerability",
-        "cve_id": "CVE-2012-2122",
-        "severity": "critical",
-        "match_confidence": 0.95,
-    },
-    {
-        "product": "elasticsearch rest api",
-        "version_prefix": "1.4.2",
-        "title": "Elasticsearch Groovy sandbox escape vulnerability",
-        "cve_id": "CVE-2015-1427",
-        "severity": "critical",
-        "match_confidence": 0.95,
-    },
-    {
-        "product": "vsftpd",
-        "version_prefix": "2.3.4",
-        "title": "vsftpd backdoor command execution vulnerability",
-        "cve_id": "CVE-2011-2523",
-        "severity": "critical",
-        "match_confidence": 0.95,
-    },
-]
-
-
 def lookup_cves(
     service: ServiceInfo | dict[str, Any],
     config: Optional[NvdLookupConfig] = None,
@@ -89,14 +29,13 @@ def lookup_cves(
 ) -> list[VulnerabilityFinding]:
     normalized = service if isinstance(service, ServiceInfo) else ServiceInfo(**service)
     resolved = config or NvdLookupConfig()
+    if not resolved.use_live_api:
+        return []
     try:
-        if resolved.use_live_api:
-            live_results = _lookup_cves_live(normalized, resolved, session)
-            if live_results:
-                return live_results
+        return _lookup_cves_live(normalized, resolved, session)
     except Exception as exc:
-        LOGGER.warning("Falling back to offline CVE catalog for %s: %s", normalized.name, exc)
-    return _lookup_cves_offline(normalized)
+        LOGGER.warning("Live CVE lookup failed for %s: %s", normalized.name, exc)
+        return []
 
 
 def _lookup_cves_live(
@@ -105,11 +44,29 @@ def _lookup_cves_live(
     session: Optional[requests.Session],
 ) -> list[VulnerabilityFinding]:
     client = session or requests.Session()
-    keyword = _build_keyword(service)
+    headers = {"apiKey": config.api_key} if config.api_key else None
+
+    cpe_params = _build_cpe_params(service, config.max_results)
+    if cpe_params is not None:
+        response = client.get(
+            config.base_url,
+            params=cpe_params,
+            headers=headers,
+            timeout=config.timeout,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        findings = _parse_nvd_items(service, payload.get("vulnerabilities", []))
+        if findings:
+            return findings
+
+    keyword_params = _build_keyword_params(service, config.max_results)
+    if keyword_params is None:
+        return []
     response = client.get(
         config.base_url,
-        params={"keywordSearch": keyword, "resultsPerPage": config.max_results},
-        headers={"apiKey": config.api_key} if config.api_key else None,
+        params=keyword_params,
+        headers=headers,
         timeout=config.timeout,
     )
     response.raise_for_status()
@@ -117,28 +74,24 @@ def _lookup_cves_live(
     return _parse_nvd_items(service, payload.get("vulnerabilities", []))
 
 
-def _lookup_cves_offline(service: ServiceInfo) -> list[VulnerabilityFinding]:
-    product = _normalize(service.product or service.name)
-    version = (service.version or "").lower()
-    findings: list[VulnerabilityFinding] = []
-    for entry in _OFFLINE_CATALOG:
-        if product != entry["product"]:
-            continue
-        prefix = entry.get("version_prefix", "")
-        if prefix:
-            if not version:
-                continue
-            if not version.startswith(prefix):
-                continue
-        findings.append(
-            VulnerabilityFinding(
-                title=entry["title"],
-                severity=entry["severity"],
-                cve_id=entry["cve_id"],
-                match_confidence=entry["match_confidence"],
-            )
-        )
-    return findings
+def _build_cpe_params(service: ServiceInfo, max_results: int) -> dict[str, Any] | None:
+    if service.cpe:
+        cpe_name = _to_cpe23(service.cpe)
+        if cpe_name:
+            return {
+                "cpeName": cpe_name,
+                "resultsPerPage": max_results,
+            }
+    return None
+
+def _build_keyword_params(service: ServiceInfo, max_results: int) -> dict[str, Any] | None:
+    keyword = _build_keyword(service)
+    if keyword:
+        return {
+            "keywordSearch": keyword,
+            "resultsPerPage": max_results,
+        }
+    return None
 
 
 def _parse_nvd_items(service: ServiceInfo, items: list[dict[str, Any]]) -> list[VulnerabilityFinding]:
@@ -161,8 +114,8 @@ def _parse_nvd_items(service: ServiceInfo, items: list[dict[str, Any]]) -> list[
 
 
 def _build_keyword(service: ServiceInfo) -> str:
-    parts = [service.product or service.name, service.version or ""]
-    return " ".join(part.strip() for part in parts if part and part.strip())
+    value = service.product or service.name
+    return value.strip() if value and value.strip() else ""
 
 
 def _extract_description(descriptions: list[dict[str, Any]]) -> str:
@@ -196,8 +149,25 @@ def _estimate_match_confidence(service: ServiceInfo, description: str) -> float:
     for token in (service.name, service.product, service.version):
         if token and token.lower() in text:
             score += 0.2
+    if service.cpe:
+        score += 0.2
     return round(min(score, 0.95), 2)
 
 
-def _normalize(value: str) -> str:
-    return " ".join(value.lower().split())
+def _to_cpe23(value: str) -> str | None:
+    normalized = value.strip()
+    if not normalized:
+        return None
+    if normalized.startswith("cpe:2.3:"):
+        return normalized
+    if not normalized.startswith("cpe:/"):
+        return None
+
+    parts = normalized[5:].split(":")
+    if len(parts) < 4:
+        return None
+
+    cpe23_parts = parts[:]
+    while len(cpe23_parts) < 11:
+        cpe23_parts.append("*")
+    return "cpe:2.3:" + ":".join(cpe23_parts[:11])

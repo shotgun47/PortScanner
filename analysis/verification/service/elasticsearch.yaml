@@ -1,0 +1,28 @@
+id: elasticsearch-service-check
+
+info:
+  name: Elasticsearch Service Check
+  author: local
+  severity: info
+  description: |
+    Confirms that the target behaves like Elasticsearch by matching
+    common Elasticsearch root response fields.
+  tags: elasticsearch,service,verification
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/"
+
+    matchers-condition: and
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "\"cluster_name\""
+          - "\"version\""
+
+      - type: regex
+        part: body
+        regex:
+          - "(?i)elasticsearch"

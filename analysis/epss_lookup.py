@@ -1,4 +1,4 @@
-"""EPSS lookup helpers with graceful degradation."""
+"""EPSS live lookup helpers."""
 
 from __future__ import annotations
 
@@ -18,17 +18,6 @@ class EpssLookupConfig:
     base_url: str = "https://api.first.org/data/v1/epss"
 
 
-_OFFLINE_EPSS = {
-    "CVE-2021-23017": 0.94,
-    "CVE-2021-41773": 0.97,
-    "CVE-2017-12615": 0.91,
-    "CVE-2017-7494": 0.96,
-    "CVE-2012-2122": 0.72,
-    "CVE-2015-1427": 0.95,
-    "CVE-2011-2523": 0.98,
-}
-
-
 def lookup_epss(
     cve_id: Optional[str],
     config: Optional[EpssLookupConfig] = None,
@@ -37,12 +26,13 @@ def lookup_epss(
     if not cve_id:
         return None
     resolved = config or EpssLookupConfig()
+    if not resolved.use_live_api:
+        return None
     try:
-        if resolved.use_live_api:
-            return _lookup_epss_live(cve_id, resolved, session)
+        return _lookup_epss_live(cve_id, resolved, session)
     except Exception as exc:
-        LOGGER.warning("Falling back to offline EPSS data for %s: %s", cve_id, exc)
-    return _OFFLINE_EPSS.get(cve_id)
+        LOGGER.warning("Live EPSS lookup failed for %s: %s", cve_id, exc)
+        return None
 
 
 def _lookup_epss_live(

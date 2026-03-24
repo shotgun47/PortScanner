@@ -1,0 +1,7 @@
+{
+    "name":  "juice_shop_drift",
+    "target_hint":  "juice-shop.lab.local",
+    "container_name":  "vuln-juice-shop",
+    "script_path":  "scenarios/juice_shop_drift/scenario.sh",
+    "description":  "Randomly toggles simulated TCP ports (3000/8080/3306) every 60-180 seconds to induce scan drift."
+}

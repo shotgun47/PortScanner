@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import requests
 
 from analysis.analyzer import AnalyzerConfig, analyze
+from analysis.verify import verify_scan
 from backend.app.config import settings
 from backend.app.schemas import (
     AnalyzeRequest,
@@ -147,6 +148,7 @@ def _run_workflow(payload: ScanRequest) -> WorkflowResponse:
     previous_scan = storage.get_previous_scan_for_target(scan_result["target"]["input_value"], scan_result["scan_id"])
     analysis_result = analyze(scan_result, previous_scan=previous_scan, config=analyzer_config).to_dict()
     storage.save_analysis(analysis_result)
+    _run_verification_for_scan(scan_result["scan_id"])
     report_payload = build_report_payload(
         scan_result=scan_result,
         analysis_result=analysis_result,
@@ -168,6 +170,55 @@ def _run_single_target_batch_item(target: str, profile: str, scenario: str | Non
     except Exception as exc:
         LOGGER.exception("Batch workflow failed for target %s", target)
         return WorkflowBatchItem(target=target, status="failed", error=str(exc))
+
+
+def _summarize_verification_results(verification_result: dict[str, Any]) -> dict[str, int]:
+    service_results = verification_result.get("results", {}).get("service", [])
+    risk_results = verification_result.get("results", {}).get("risk", [])
+    all_results = [*service_results, *risk_results]
+
+    summary = {
+        "service_templates": len(service_results),
+        "risk_templates": len(risk_results),
+        "verified": 0,
+        "suspected": 0,
+        "not_verified": 0,
+        "error": 0,
+    }
+    for item in all_results:
+        status = str(item.get("status", "")).strip().lower()
+        if status in summary:
+            summary[status] += 1
+    return summary
+
+
+def _run_verification_for_scan(scan_id: str, target_type: str | None = None) -> dict[str, Any]:
+    try:
+        verification_result = verify_scan(scan_id=scan_id, target_type=target_type)
+        summary = _summarize_verification_results(verification_result)
+        LOGGER.info(
+            (
+                "Verification completed for scan_id=%s "
+                "(target_type=%s, service_templates=%s, risk_templates=%s, "
+                "verified=%s, suspected=%s, not_verified=%s, error=%s)"
+            ),
+            scan_id,
+            verification_result.get("target_type"),
+            summary["service_templates"],
+            summary["risk_templates"],
+            summary["verified"],
+            summary["suspected"],
+            summary["not_verified"],
+            summary["error"],
+        )
+        return verification_result
+    except Exception as exc:
+        LOGGER.warning("Verification skipped for scan_id=%s: %s", scan_id, exc)
+        return {
+            "scan_id": scan_id,
+            "status": "skipped",
+            "error": str(exc),
+        }
 
 
 @app.post("/api/v1/workflows/run", response_model=WorkflowResponse)
@@ -241,6 +292,13 @@ def run_inventory_endpoint(payload: InventoryRunRequest) -> InventoryRunResponse
 @app.get("/api/v1/verifications/{scan_id}")
 def list_verification_records(scan_id: str) -> dict[str, list[dict[str, Any]]]:
     return {"items": storage.list_verifications(scan_id)}
+
+
+@app.post("/api/v1/verifications/{scan_id}/run")
+def run_verification_record(scan_id: str, target_type: str | None = None) -> dict[str, Any]:
+    if storage.get_scan(scan_id) is None:
+        raise HTTPException(status_code=404, detail="scan not found")
+    return _run_verification_for_scan(scan_id, target_type=target_type)
 
 
 @app.post("/api/v1/verifications", response_model=VerificationRecordResponse)

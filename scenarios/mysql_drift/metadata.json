@@ -1,0 +1,7 @@
+{
+    "name":  "mysql_drift",
+    "target_hint":  "mysql-cve-2012-2122.lab.local",
+    "container_name":  "vuln-mysql-cve-2012-2122",
+    "script_path":  "scenarios/mysql_drift/scenario.sh",
+    "description":  "Randomly toggles simulated TCP ports (3306/3000/8080) every 60-180 seconds to induce scan drift."
+}

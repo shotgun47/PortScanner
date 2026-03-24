@@ -1,0 +1,54 @@
+id: samba-service-check
+
+info:
+  name: Samba SMB Service Check
+  author: local
+  severity: info
+  description: |
+    Confirms that the target behaves like an SMB service by attempting
+    protocol negotiation and matching common SMB response markers.
+  tags: samba,smb,service,verification
+
+tcp:
+  - host:
+      - "{{Hostname}}"
+    port: 445
+    inputs:
+      - type: hex
+        data: "00000054ff534d4272000000001801280000000000000000000000000000000000000000006200025043204e4554574f524b2050524f4752414d20312e3000024c414e4d414e312e30000257696e646f777320666f7220576f726b67726f75707320332e316100024c4d312e325830303200"
+    read-size: 512
+    matchers-condition: or
+    matchers:
+      - type: binary
+        part: data
+        binary:
+          - "ff534d42"
+
+      - type: word
+        part: data
+        words:
+          - "SMB"
+
+      - type: word
+        part: data
+        words:
+          - "NT LM 0.12"
+
+  - host:
+      - "{{Hostname}}"
+    port: 139
+    inputs:
+      - type: hex
+        data: "810000440020000000000000000000000000000000000000000000000000000000204648454245424645434143414341434143414341434143414341000020454b4544454e4543464445454545454545454545454545454545450000"
+    read-size: 512
+    matchers-condition: or
+    matchers:
+      - type: binary
+        part: data
+        binary:
+          - "ff534d42"
+
+      - type: word
+        part: data
+        words:
+          - "SMB"

