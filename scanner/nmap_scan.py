@@ -48,6 +48,10 @@ PROFILE_CONFIG = {
         "ports": "80,443,3000,8080,8443",
         "args": "-sV",
     },
+    "redis": {
+        "ports": "6379",
+        "args": "-sV",
+    }
 }
 
 # 2. 유틸리티 함수
