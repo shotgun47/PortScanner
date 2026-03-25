@@ -1,0 +1,7 @@
+{
+  "name": "host_presence_drift",
+  "target_hint": "172.28.0.6",
+  "container_name": "drift-probe",
+  "script_path": "scenarios/host_presence_drift/scenario.sh",
+  "description": "Randomly blocks and restores ICMP replies to simulate host up/down within 172.28.0.0/29"
+}

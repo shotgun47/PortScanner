@@ -73,6 +73,18 @@ services:
     networks:
       lab-net:
         ipv4_address: 172.28.0.4
+  
+  drift-probe:
+    image: alpine:3.20
+    container_name: drift-probe
+    hostname: drift-probe.lab.local
+    command: >
+      sh -lc "apk add --no-cache iptables iproute2 iputils >/dev/null 2>&1 && sleep infinity"
+    cap_add:
+      - NET_ADMIN
+    networks:
+      lab-net:
+        ipv4_address: 172.28.0.6
 
   juice-shop:
     image: bkimminich/juice-shop:v18.0.0

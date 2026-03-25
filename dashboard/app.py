@@ -412,24 +412,49 @@ with st.expander("🌐 대역 기반 자산 스캔 (Inventory Drift)", expanded=
                 if res.status_code == 200:
                     inv_data = res.json()
                     discovered_hosts = inv_data.get("hosts", [])
-                    
+                    drift_data = inv_data.get("drift", {}) or {}
+
                     if discovered_hosts:
                         added_count = 0
                         for h in discovered_hosts:
-                            ip = h["ip"]
-                            # 실행용 queue는 IP만
-                            if ip not in st.session_state["scan_queue"]:
-                                st.session_state["scan_queue"].append(ip)
+                            host_ip = h["ip"] if isinstance(h, dict) else str(h)
+                            if host_ip not in st.session_state["scan_queue"]:
+                                st.session_state["scan_queue"].append(host_ip)
                                 added_count += 1
-
-                            # 표시용 정보는 별도 저장
-                            st.session_state["scan_queue_meta"][ip] = {
-                                "status": h.get("status", "unknown"),
-                                "open_ports": h.get("open_ports", []),
-                            }
                         st.success(f"✅ {added_count}개의 활성 호스트를 🚀 스캔 대기 목록에 추가했습니다! (아래에서 스캔을 시작해 주세요)")
                     else:
                         st.warning("이 대역에서 발견된 활성 호스트가 없습니다.")
+
+                    new_hosts = drift_data.get("new_hosts", []) or []
+                    missing_hosts = drift_data.get("missing_hosts", []) or []
+                    changed_hosts = drift_data.get("changed_hosts", []) or []
+
+                    if new_hosts or missing_hosts or changed_hosts:
+                        st.warning("🚨 대역 변화 감지 (Inventory Drift Detected)")
+
+                        if new_hosts:
+                            st.info("🟢 새로 나타난 호스트: " + ", ".join(new_hosts))
+
+                        if missing_hosts:
+                            st.error("🔴 사라진 호스트: " + ", ".join(missing_hosts))
+
+                        if changed_hosts:
+                            changed_lines = []
+                            for ch in changed_hosts:
+                                ip = ch.get("ip", "unknown")
+                                new_ports = ch.get("new_ports", []) or []
+                                closed_ports = ch.get("closed_ports", []) or []
+
+                                parts = [f"{ip}"]
+                                if new_ports:
+                                    parts.append(f"+{new_ports}")
+                                if closed_ports:
+                                    parts.append(f"-{closed_ports}")
+                                changed_lines.append(" / ".join(parts))
+
+                            st.info("🟡 포트가 바뀐 호스트:\n- " + "\n- ".join(changed_lines))
+                    else:
+                        st.success("대역 변화 없음")
                 else:
                     st.error(f"❌ 탐색 실패 (상태 코드: {res.status_code})")
             except Exception as e:
