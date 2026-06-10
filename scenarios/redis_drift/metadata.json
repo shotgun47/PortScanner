@@ -1,7 +1,0 @@
-{
-  "name": "redis_drift",
-  "target_hint": "redis-4-unacc.lab.local",
-  "container_name": "vuln-redis-4-unacc",
-  "script_path": "scenarios/redis_drift/scenario.sh",
-  "description": "Randomly toggles Redis(6379) and simulated SSH/HTTP(22/80) ports every 60-180 seconds."
-}
